@@ -23,6 +23,10 @@ Android port of Folia, 0.7.27.x) with the customizations made on the desktop Fol
   gives it the file itself, and `FoliaNativePlayer.kt` now builds its players on `DefaultDataSource`
   (it was HTTP-only, so any `file://` failed with `ERROR_CODE_IO_UNSPECIFIED`).
 
+- **Endless autoplay never refilled on Android (fixed):** the refill waited for the store's
+  `playerState` to be PLAYING, which the native player never sets (it stays IDLE from the song change
+  while ExoPlayer plays). `useEndlessQueue.ts` now refills unless playback is paused.
+
 ## Building
 
 `.github/workflows/hong-apk.yml` builds a debug-signed APK on every push to `hong-custom` (or by hand

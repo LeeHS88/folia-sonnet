@@ -18,7 +18,10 @@ const snapshot = () => {
 export function useEndlessQueue() {
     const queue = usePlaybackStore(state => state.playQueue);
     const current = usePlaybackStore(state => state.currentSong);
-    const playing = usePlaybackStore(state => state.playerState === PlayerState.PLAYING);
+    // Not "=== PLAYING": on Android the native player (ExoPlayer) plays while the store's raw state
+    // stays IDLE from the song change (selectDisplayPlayerState shows it as playing). Only a pause
+    // holds the refill back; with no current song there is nothing to refill anyway.
+    const playing = usePlaybackStore(state => state.playerState !== PlayerState.PAUSED);
     const context = usePlaybackStore(state => state.activePlaybackContext);
     const isFm = usePlaybackStore(state => state.isFmMode);
     const ref = useRef<ReturnType<typeof createEndlessQueueRefiller> | null>(null);
