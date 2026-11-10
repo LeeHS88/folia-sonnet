@@ -380,6 +380,14 @@ class MainActivity : BridgeActivity() {
         // 首帧之前露出的是 WebView 的默认白底。页面底色是 body 的 #09090b，
         // 两者对齐之后，切页那一瞬间的空档与页面同色，不会再有一帧白/黑的跳变。
         webView.setBackgroundColor(Color.parseColor(APP_BACKGROUND_COLOR))
+
+        // 后台连播要 Web 在场：YouTube Music 的地址只有 Web 拿得到（BotGuard 令牌、下载到缓存），
+        // 原生放完一首交回 Web（nativePlayFailed）。默认策略下页面一看不见，渲染进程的优先级就被
+        // 放弃，随即被系统冻住 —— 回执要等用户把应用切回来才处理，锁屏时就停在上一首末尾。
+        // 不放弃优先级：看不见时渲染进程照旧保持 IMPORTANT，后台也能接着取下一首。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+        }
     }
 
     /**

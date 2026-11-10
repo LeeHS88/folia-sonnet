@@ -39,6 +39,11 @@ Android port of Folia, 0.7.27.x) with the customizations made on the desktop Fol
   reports `file://`, which the WebView cannot read; `toWebMediaUrl` turns it back into the WebView
   address.
 
+- **Stuck at the end of a song with the screen off (fixed):** the hand-over above runs in the
+  WebView, and Android froze the WebView's renderer as soon as the app was not visible (the hand-over
+  was only handled when the app was opened again). `MainActivity.kt` now keeps the renderer at
+  IMPORTANT priority while hidden (`setRendererPriorityPolicy(RENDERER_PRIORITY_IMPORTANT, false)`).
+
 ## Building
 
 `.github/workflows/hong-apk.yml` builds a debug-signed APK on every push to `hong-custom` (or by hand
