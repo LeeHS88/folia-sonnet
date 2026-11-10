@@ -27,6 +27,18 @@ Android port of Folia, 0.7.27.x) with the customizations made on the desktop Fol
   `playerState` to be PLAYING, which the native player never sets (it stays IDLE from the song change
   while ExoPlayer plays). `useEndlessQueue.ts` now refills unless playback is paused.
 
+- **Next song jumped back to song 1 in the background (fixed):** when a song ended, the native
+  player tried to fetch the next YouTube Music song itself (it can't: only the WebView can), and
+  in the background it silently skipped each one until the queue wrapped. `FoliaPlaybackService.kt`
+  now hands YouTube Music songs to the WebView right away (`nativePlayFailed`), foreground or not.
+- **"Playback error" on a replayed song (fixed):** only 6 downloads were kept, while the prefetch
+  cache still held the address of deleted ones (`ERROR_CODE_IO_FILE_NOT_FOUND`). Now 20 are kept,
+  and a cached app-local address is checked before reuse (`appLocalAudio.ts`); a missing file is
+  fetched again.
+- **Beat analysis / lyric auto-calibration after returning to the app (fixed):** the native player
+  reports `file://`, which the WebView cannot read; `toWebMediaUrl` turns it back into the WebView
+  address.
+
 ## Building
 
 `.github/workflows/hong-apk.yml` builds a debug-signed APK on every push to `hong-custom` (or by hand

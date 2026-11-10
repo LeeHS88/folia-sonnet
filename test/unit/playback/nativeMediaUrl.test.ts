@@ -61,3 +61,14 @@ describe('the address the native player is handed', () => {
         expect(harness.nativePlayer.prepare).toHaveBeenCalledWith(expect.objectContaining({ url: `file://${file}` }));
     });
 });
+
+describe('the address the WebView gets back from the native player', () => {
+    it('round-trips through the native address and leaves stream addresses alone', async () => {
+        const { toWebMediaUrl } = await import('@/services/playbackEngine/nativePlaybackEngine');
+        const web = `https://localhost/_capacitor_file_${file}`;
+        // Outside a native shell Capacitor converts nothing; the native shell gives back the web address.
+        expect(toWebMediaUrl('https://rr3---sn.googlevideo.com/videoplayback?itag=251')).toBe('https://rr3---sn.googlevideo.com/videoplayback?itag=251');
+        expect(toNativeMediaUrl(web)).toBe(`file://${file}`);
+        expect(typeof toWebMediaUrl(`file://${file}`)).toBe('string');
+    });
+});

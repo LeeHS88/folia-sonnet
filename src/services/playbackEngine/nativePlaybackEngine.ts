@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { nativePlayer, type NativePlaybackEvent, type NativePlaybackSnapshot } from './nativePlayerPlugin';
 import { isNativePlaybackReconciling } from './nativePlaybackSync';
 
@@ -57,6 +58,17 @@ export const toNativeMediaUrl = (url: string): string => {
     } catch { /* not an absolute URL: leave it as it is */ }
     return url;
 };
+
+/**
+ * The other way round, for the WebView: the native player reports the file it plays (after a return
+ * from the background the app adopts that address). The WebView cannot fetch `file://` — lyric
+ * auto-calibration and the beat analysis read the song through this address — so it is handed the
+ * Capacitor address of the same file. Anything else is left as it is.
+ */
+export const toWebMediaUrl = (url: string): string => (
+    (url.startsWith('file://') || url.startsWith('content://')) && Capacitor.isNativePlatform()
+        ? Capacitor.convertFileSrc(url) : url
+);
 
 class NativePlaybackEngine {
     private positionMs = 0;

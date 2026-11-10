@@ -43,8 +43,9 @@ const PAGE_LANGUAGES: Record<string, string> = { 'zh-CN': 'zh-CN', 'zh-TW': 'zh-
 // 一个会话用多久就重建（播放器脚本会更新）。
 const SESSION_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const AUDIO_DIR = 'ytm-audio';
-// 缓存目录里最多留几首；多出来的按时间先后删掉。
-const KEPT_AUDIO_FILES = 6;
+// 缓存目录里最多留几首；多出来的按时间先后删掉。一首约 4–5 MB。6 首太少：预取三首、
+// 往回点一首就会撞上已删的文件（Web 端缓存的地址还指着它）。
+const KEPT_AUDIO_FILES = 20;
 
 const boundedText = (value: unknown, max: number): string | null => (
     typeof value === 'string' && value.length > 0 && value.length <= max ? value : null

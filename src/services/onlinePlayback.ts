@@ -1,6 +1,7 @@
 import { LyricData, OnlineLyricsState, ReplayGainInfo, SongResult } from '../types';
 import { saveToCache } from './db';
 import { PrefetchedSongData, isUrlValid, updatePrefetchedAudioUrl } from './prefetchService';
+import { appLocalAudioIsThere } from './appLocalAudio';
 import { isPureMusicLyricText } from '../utils/lyrics/pureMusic';
 import { migrateLyricDataRenderHints } from '../utils/lyrics/renderHints';
 import { loadOnlineLyricsState, markOnlineLyricsPureMusic, resolveOnlineLyrics, resolveOnlineLyricsPureMusic, saveOnlineLyricsState } from '../utils/onlineLyricsState';
@@ -131,7 +132,8 @@ export async function loadOnlineSongAudioSource(
     const fromCopy = await playCopy(await readCopy(level));
     if (fromCopy) return fromCopy;
 
-    if (prefetched?.audioUrl && prefetched.audioUrl !== 'CACHED_IN_DB' && isUrlValid(prefetched.audioUrlFetchedAt)) {
+    if (prefetched?.audioUrl && prefetched.audioUrl !== 'CACHED_IN_DB' && isUrlValid(prefetched.audioUrlFetchedAt)
+        && await appLocalAudioIsThere(prefetched.audioUrl)) {
         return {
             kind: 'ok',
             audioSrc: prefetched.audioUrl,

@@ -9,7 +9,7 @@ const h = vi.hoisted(() => ({
     drop: vi.fn(),
     makeCurrent: vi.fn(),
 }));
-vi.mock('@/services/playbackEngine/nativePlaybackEngine', () => ({ nativePlaybackEngine: { adoptSnapshot: h.adoptSnapshot } }));
+vi.mock('@/services/playbackEngine/nativePlaybackEngine', () => ({ nativePlaybackEngine: { adoptSnapshot: h.adoptSnapshot }, toWebMediaUrl: (url: string) => url }));
 vi.mock('@/stores/motionSignals', () => ({ currentTime: { set: h.setTime } }));
 vi.mock('@/components/app/playback/currentSong', () => ({ dropPlaysInFlight: h.drop, makeSongCurrent: h.makeCurrent }));
 const { usePlaybackStore } = await import('@/stores/usePlaybackStore');

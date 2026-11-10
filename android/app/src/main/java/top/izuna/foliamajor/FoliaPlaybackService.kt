@@ -1464,6 +1464,20 @@ class FoliaPlaybackService : android.app.Service() {
         val hash = entry.optString("providerHash", "")
         val albumAudioId = entry.optString("providerAlbumAudioId", "")
         val songKey = entry.optString("songKey", "")
+        /*
+         * YouTube Music 的地址原生永远解析不了（要 BotGuard 令牌、下载到缓存，都在 Web 那边）。
+         * 这类歌放完 / 切到它时直接交回 Web，前后台都一样：以前在后台走「静默跳过」，
+         * 一整串 YouTube 歌被一首首跳掉，最后绕回队首（用户看到的是「放完一首跳回第一首」）。
+         */
+        if (providerId == "ytm" && songKey.isNotEmpty()) {
+            Log.i(TAG, "YouTube Music 的歌交给 Web 放 songKey=" + songKey)
+            mainHandler.post {
+                if (generation != dispatchGeneration) return@post
+                if (pendingDispatchSongKey == songKey) pendingDispatchSongKey = null
+                sendCommand("nativePlayFailed", 0L, songKey)
+            }
+            return
+        }
         if (providerId.isEmpty() || (songId.isEmpty() && mid.isEmpty() && hash.isEmpty())) {
             /*
              * 身份不全，连问都问不了。**必须回执**：这条以前是静默 return，而 playFromQueue

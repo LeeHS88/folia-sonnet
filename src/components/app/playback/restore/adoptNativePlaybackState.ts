@@ -1,5 +1,5 @@
 import type { NativeQueueState } from '../../../../services/nativeQueueBridge';
-import { nativePlaybackEngine } from '../../../../services/playbackEngine/nativePlaybackEngine';
+import { nativePlaybackEngine, toWebMediaUrl } from '../../../../services/playbackEngine/nativePlaybackEngine';
 import { currentTime } from '../../../../stores/motionSignals';
 import { usePlaybackStore } from '../../../../stores/usePlaybackStore';
 import { PlayerState, type SongResult } from '../../../../types';
@@ -30,7 +30,7 @@ export const adoptNativePlaybackState = (snapshot: NativeQueueState): boolean =>
         store.setCachedCoverUrl(snapshot.artworkUrl || null);
     }
     makeSongCurrent(song as SongResult);
-    if (media?.songKey === snapshot.songKey && media.url) store.setAudioSrc(media.url);
+    if (media?.songKey === snapshot.songKey && media.url) store.setAudioSrc(toWebMediaUrl(media.url));
     store.setDuration(Math.max(0, snapshot.durationMs) / 1000);
     currentTime.set(Math.max(0, snapshot.positionMs) / 1000);
     store.setPlayerState(snapshot.playing ? PlayerState.PLAYING : PlayerState.PAUSED);
