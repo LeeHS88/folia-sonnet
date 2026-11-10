@@ -665,7 +665,7 @@ function createYtmApiBridge({
           clearTimeout(limit);
         }
       }
-      if (type === 'playlist' && !page.continuation) {
+      if (type === 'playlist' && !page.continuation && webRepo.get() === session) {
         // Supplement the music library only after its last page. A WEB outage must not hide ordinary playlists.
         try {
           const mixes = await readMixes();
