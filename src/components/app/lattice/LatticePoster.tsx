@@ -277,6 +277,8 @@ function LatticePoster({
             key={instanceId}
             className={`lattice-poster ${expanded ? 'is-expanded' : ''} ${isFocused ? 'is-focused' : ''} ${isCurrent ? 'is-current' : ''} ${tile.kind === 'collection' ? 'is-collection' : ''} ${tile.entryKind && tile.entryKind !== 'song' ? `is-kind-${tile.entryKind}` : ''} ${awaitsFlight ? 'is-awaiting-flight' : ''}`}
             data-instance-id={instanceId}
+            data-artwork-only={coverUrl ? true : undefined}
+            data-details-revealed={chrome.hovered || chrome.revealed ? true : undefined}
             {...(isFlightEnd ? { [LATTICE_TILE_ATTR]: tile.id } : {})}
             initial={reducedMotion || mountsInPlace || handoff?.kind === 'static'
                 ? false

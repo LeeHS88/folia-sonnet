@@ -71,6 +71,7 @@ import { useStableActionSurface } from '../../../../hooks/useStableCallbacks';
 import { hasBeforePlayHook, notifyPlaybackFailed, runBeforePlayHook } from '../../../../services/hostExtensionHooks';
 import { wholeQueueWritesSoFar } from '../../../../services/wholeQueueWrites';
 import { noteQueueStart } from './queueStarts';
+import { useEndlessQueue } from './useEndlessQueue';
 import { errorMessage } from '../../../../utils/errorText';
 import { hifiTransport, isHifiRoute } from '../../../../services/hifi/hifiPlayback';
 import { isPlaybackInterfaceHidden, notifyBackgroundPlaybackNotice } from '../../../../services/playbackRecovery/backgroundFailureNotice';
@@ -323,6 +324,7 @@ export function usePlaybackQueueController({
     const playQueue = usePlaybackStore(state => state.playQueue);
     const playerState = usePlaybackStore(state => state.playerState);
     const isFmMode = usePlaybackStore(state => state.isFmMode);
+    const endlessQueue = useEndlessQueue();
     const searchQuery = useSearchNavigationStore(state => state.searchQuery);
     const searchSourceTab = useSearchNavigationStore(state => state.searchSourceTab);
     const searchReturnView = useSearchNavigationStore(state => state.searchReturnView);
@@ -1063,7 +1065,7 @@ export function usePlaybackQueueController({
         const resolvedSong = preloadedOnlineAudioResult?.kind === 'ok'
             ? applyOnlineAudioSourceMetadata(song, preloadedOnlineAudioResult.replayGain)
             : song;
-        const resolvedQueue = replacePlaybackSongInQueue(newQueue, resolvedSong);
+        let resolvedQueue = replacePlaybackSongInQueue(newQueue, resolvedSong);
         // The queue as it lands: without the songs of a platform signed out of while this play waited.
         const ownQueue = () => keepSongsOfProvidersStanding(resolvedQueue, providerDropsAtStart);
         askForSong(song);
@@ -1108,6 +1110,12 @@ export function usePlaybackQueueController({
 
         // A whole-queue write came while this play waited: the new queue stays, with this song swapped in
         // where it holds it and left as it is where it does not.
+        const liveQueue = usePlaybackStore.getState().playQueue;
+        if (queueFollowsStore && endlessQueue.isEndless() && liveQueue.length > newQueue.length
+            && samePlaybackKeySequence(liveQueue.slice(0, newQueue.length), newQueue)) {
+            // A refill may arrive while this next track's audio is loading. Keep its appended tail.
+            resolvedQueue = replacePlaybackSongInQueue(liveQueue, resolvedSong);
+        }
         let landedQueue = ownQueue();
         if (queueRewritten()) {
             const live = usePlaybackStore.getState().playQueue;
@@ -1220,6 +1228,7 @@ export function usePlaybackQueueController({
         clearPendingUnavailableSkip,
         currentOnlineAudioUrlFetchedAtRef,
         currentTime,
+        endlessQueue,
         getNextPlayableQueueSong,
         getPlayableOnlineQueue,
         interruptStagePlaybackForMainTransition,
@@ -1442,7 +1451,26 @@ export function usePlaybackQueueController({
         const currentIndex = queueIndexOf(playQueue, heldSong ?? options?.fromSong ?? currentSong);
         // Personal FM never goes round to the queue's first track: when the fetch below fails or
         // comes back empty on the last track, there is no next track.
-        const indexLoopMode = queueLoopMode(loopMode, isFmMode);
+        const isEndless = endlessQueue.isEndless();
+        const indexLoopMode = queueLoopMode(loopMode, isFmMode || isEndless);
+
+        // Usually the background refill has already arrived. At the tail, await that same request
+        // before deciding to stop, and never loop a Mix back to its original 25 songs.
+        if (isEndless && currentIndex >= playQueue.length - 1) {
+            const call = playSongCallIdRef.current;
+            await endlessQueue.refill();
+            const live = usePlaybackStore.getState();
+            if (call !== playSongCallIdRef.current || wholeQueueWritesSoFar() !== queueWritesAtStart
+                || live.activePlaybackContext !== 'main' || !isSamePlaybackSong(live.currentSong, currentSong)) return;
+            const next = nextQueueIndex(live.playQueue.length, queueIndexOf(live.playQueue, heldSong ?? options?.fromSong ?? currentSong), 'off');
+            if (next >= 0) {
+                void playSong(live.playQueue[next], live.playQueue, false, {
+                    shouldNavigateToPlayer, unavailableSkipCount: options?.unavailableSkipCount,
+                    isAutomixAdvance: options?.isAutomixAdvance,
+                });
+            } else if (options?.allowStopOnMissing) stopAtQueueEnd();
+            return;
+        }
 
         if (isFmMode && fmNeedsTopUpAt(playQueue.length, currentIndex)) {
             let batch: SongResult[] = [];
@@ -1531,7 +1559,7 @@ export function usePlaybackQueueController({
         } else if (options?.allowStopOnMissing) {
             stopAtQueueEnd();
         }
-    }, [audioRef, currentSong, endHeldTransition, getDisplaySong, isFmMode, isNowPlayingStageActive, loopMode, navigateToPlaybackView, nativePlaybackRef, playQueue, playSong, setPlayQueue, setPlayerState, shouldNavigateToPlayerOnTrackChange]);
+    }, [audioRef, currentSong, endHeldTransition, endlessQueue, getDisplaySong, isFmMode, isNowPlayingStageActive, loopMode, navigateToPlaybackView, nativePlaybackRef, playQueue, playSong, setPlayQueue, setPlayerState, shouldNavigateToPlayerOnTrackChange]);
 
     const handlePrevTrack = useCallback(async () => {
         if (isNowPlayingStageActive) return;
@@ -1558,14 +1586,14 @@ export function usePlaybackQueueController({
 
         const currentIndex = queueIndexOf(playQueue, heldSong ?? currentSong);
         // Nor does Personal FM jump back from its first track to the newest one at the queue's end.
-        const prevIndex = prevQueueIndex(playQueue.length, currentIndex, queueLoopMode(loopMode, isFmMode));
+        const prevIndex = prevQueueIndex(playQueue.length, currentIndex, queueLoopMode(loopMode, isFmMode || endlessQueue.isEndless()));
 
         if (prevIndex >= 0) {
             void playSong(playQueue[prevIndex], playQueue, isFmMode, {
                 shouldNavigateToPlayer: shouldNavigateToPlayerOnTrackChange,
             });
         }
-    }, [currentSong, endHeldTransition, getDisplaySong, isFmMode, isNowPlayingStageActive, loopMode, navigateToPlaybackView, nativePlaybackRef, playQueue, playSong, shouldNavigateToPlayerOnTrackChange]);
+    }, [currentSong, endHeldTransition, endlessQueue, getDisplaySong, isFmMode, isNowPlayingStageActive, loopMode, navigateToPlaybackView, nativePlaybackRef, playQueue, playSong, shouldNavigateToPlayerOnTrackChange]);
 
     // A failure's buttons may be pressed long after: they call the newest handleNextTrack / playSong, with
     // the queue of that moment. The failures of playSong use it too; their closures read `.current` only

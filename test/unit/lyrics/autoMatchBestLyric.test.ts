@@ -224,6 +224,21 @@ describe('autoMatchBestLyric', () => {
         expect(cloudSearchMock).not.toHaveBeenCalled();
     });
 
+    it('filters different recordings before choosing the automatic lyric candidate', async () => {
+        const correct = { id: 201, qqMid: 'right', name: 'Song Title', artists: [{ id: 1, name: 'Artist Name' }],
+            album: { id: 2, name: '' }, durationMs: 200000 };
+        searchQQLyricsMock.mockResolvedValue([
+            { ...correct, id: 202, qqMid: 'cover', artists: [{ id: 3, name: 'Cover Singer' }] },
+            { ...correct, id: 203, qqMid: 'live', name: 'Song Title (Live)' },
+            { ...correct, id: 204, qqMid: 'long', durationMs: 240000 },
+            correct,
+        ]);
+        fetchQQLyricsMock.mockResolvedValue(createLyrics(true));
+        const result = await autoMatchBestLyric('Song Title', 'Artist Name', 201000, { preferredSource: 'qq', strictRecordingMatch: true });
+        expect(result).toMatchObject({ source: 'qq', id: 201 });
+        expect(fetchQQLyricsMock).toHaveBeenCalledTimes(1);
+    });
+
     it('reuses the active QQ provider candidate without searching or fetching QQ again', async () => {
         const qqSong = {
             id: 201,

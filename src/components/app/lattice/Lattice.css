@@ -171,6 +171,17 @@
    in components/wall/wall.css). */
 .lattice-queue-root .lattice-poster-badge { text-transform: uppercase; }
 
+/* Keep the queue's artwork clear at rest. The article retains its accessible name, and the
+   existing pointer / keyboard / touch disclosure reveals labels without affecting lyrics.
+   Posters without artwork keep their text so they remain identifiable. */
+.lattice-queue-root .lattice-poster[data-artwork-only] > .lattice-poster-copy {
+    visibility: hidden;
+}
+
+.lattice-queue-root .lattice-poster[data-artwork-only]:is([data-details-revealed], :focus-visible:not(.is-expanded)) > .lattice-poster-copy {
+    visibility: visible;
+}
+
 .lattice-empty {
     position: absolute;
     inset: 0;

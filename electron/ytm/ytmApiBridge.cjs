@@ -12,6 +12,7 @@ const webPages = require('./webPages.cjs');
 const webSaves = require('./webSaves.cjs');
 const { createWebExplore } = require('./webExplore.cjs');
 const songVersion = require('./songVersion.cjs');
+const youtubeMixes = require('./youtubeMixes.cjs');
 
 // electron/ytm/ytmApiBridge.cjs
 
@@ -618,6 +619,18 @@ function createYtmApiBridge({
   const webLibraryPage = (tabId, type) => async params => {
     if (params.continuation !== undefined && !boundedText(params.continuation, 8192)) throw ytmError('invalid-response', 'Invalid page token');
     return withWeb(async web => {
+      const readMixes = async continuation => {
+        const data = await askWeb(web, '/browse', { client: 'WEB', ...(continuation ? { continuation } : { browseId: 'FEplaylist_aggregation' }) });
+        if (webPages.signedInMarkOf(data) !== '1') throw ytmError('unavailable', 'YouTube did not return the signed-in Mix library');
+        const result = youtubeMixes.readSavedMixesPage(data);
+        log(`[Ytm] Saved YouTube Mixes: ${result.items.length} entries${result.continuation ? ', more follow' : ''}`);
+        return { items: result.items, ...(result.continuation ? { continuation: youtubeMixes.PAGE_PREFIX + result.continuation } : {}) };
+      };
+      if (type === 'playlist' && params.continuation?.startsWith(youtubeMixes.PAGE_PREFIX)) {
+        const token = params.continuation.slice(youtubeMixes.PAGE_PREFIX.length);
+        if (!token) throw ytmError('invalid-response', 'Invalid Mix page token');
+        return readMixes(token);
+      }
       const session = webRepo.get();
       const page = webPages.readGrid(await browseWeb(web, params.continuation ? { continuation: params.continuation } : { browseId: tabId }));
       const items = page.rows.map(row => webPages.collectionFromRow(row)).filter(item => item?.type === type);
@@ -650,6 +663,16 @@ function createYtmApiBridge({
           await Promise.all(Array.from({ length: Math.min(unknown.length, PLAYLIST_OWNERSHIP_REQUESTS) }, checkNext));
         } finally {
           clearTimeout(limit);
+        }
+      }
+      if (type === 'playlist' && !page.continuation) {
+        // Supplement the music library only after its last page. A WEB outage must not hide ordinary playlists.
+        try {
+          const mixes = await readMixes();
+          return { ...mixes, items: [...items, ...mixes.items] };
+        } catch (error) {
+          if (isSignedOut(error)) throw error;
+          warn(`[Ytm] Saved YouTube Mixes could not be read (${describeError(error)}); music playlists remain available`);
         }
       }
       return { items, ...(page.continuation ? { continuation: page.continuation } : {}) };
@@ -1105,6 +1128,17 @@ function createYtmApiBridge({
       if (!id) throw ytmError('invalid-response', 'Invalid mix id');
       if (params.videoId !== undefined && !(typeof params.videoId === 'string' && tiles.VIDEO_ID.test(params.videoId))) {
         throw ytmError('invalid-response', 'Invalid track id');
+      }
+      if (id.startsWith(youtubeMixes.MIX_PREFIX)) {
+        const playlistId = youtubeMixes.youtubeMixId(id);
+        if (!playlistId) throw ytmError('invalid-response', 'Invalid YouTube Mix id');
+        return withWeb(async web => {
+          const data = await askWeb(web, '/next', { client: 'WEB', playlistId, ...(params.videoId ? { videoId: params.videoId } : {}) });
+          if (webPages.signedInMarkOf(data) !== '1') throw ytmError('unavailable', 'YouTube did not return a signed-in Mix queue');
+          const result = youtubeMixes.readSavedMixQueue(data, playlistId);
+          log(`[Ytm] Saved YouTube Mix: ${result.items.length} songs`);
+          return result;
+        });
       }
       const [guest, { YTNodes }] = await Promise.all([guestSession.get(), library()]);
       const page = await guest.actions.execute('/next', {

@@ -16,6 +16,7 @@ import { describeYtmLoginFailure, ytmLoginFailure } from './ytmLoginFailure';
 import { describeYtmFailure } from './ytmFailure';
 import { getYtmLoginDiagnostics, noteYtmLoginStatusCheck } from './ytmLoginDiagnostics';
 import { diagnosticLine } from '../login/loginDiagnosticReport';
+import { ytmLyricIdentity } from './ytmLyricIdentity';
 import i18n from '../../../i18n/config';
 import { isCapacitorAndroid } from '../../../platform/runtime';
 
@@ -140,11 +141,22 @@ export const ytmProvider: OnlineMusicProvider = {
         },
         // A music video a list showed as itself, its song not known in time, is played as that song.
         async getPlayedSong(song) {
+            // A saved WEB Mix must keep its original video and continuation position.
+            if (ytmCatalog.getQueueContinuationKey?.(song)) return null;
             const { song: played } = await requestYtm<{ song: YtmWireSong | null }>('played_as', { id: requireYtmSong(song) });
             return played && normalizeYtmSong(played);
         },
     },
     lyrics: {
+        getMatchIdentity: ytmLyricIdentity,
+        async resolveMatchIdentity(song) {
+            const identity = ytmLyricIdentity(song);
+            if (!identity || identity.durationMs > 0) return identity;
+            // Some library rows omit duration. The cached video detail supplies its real length
+            // before we compare recordings; zero must not mean an arbitrary duration is safe.
+            const detailed = await ytmCatalog.resolveSongCatalogRefs?.(normalizeYtmSong(song));
+            return detailed ? ytmLyricIdentity({ ...song, durationMs: detailed.durationMs }) : identity;
+        },
         // YouTube Music's own lyrics are timed by line only. A failure to read them answers "none"
         // instead of an error, so that the cross-source lookup still runs for the song.
         async getLyrics(song) {

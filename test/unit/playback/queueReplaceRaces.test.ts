@@ -32,6 +32,8 @@ const env = vi.hoisted(() => {
         replacementFor: new Map<string, unknown>(),
         /** The Personal FM batch, held until it resolves. */
         fmBatch: null as Promise<unknown[]> | null,
+        endless: false,
+        endlessBatch: null as Promise<unknown[]> | null,
         /** Holds the Stage API's lookup of a song's details. */
         detailGate: null as Promise<unknown> | null,
         /** Every lookup of a song's details, as [providerId, id]. */
@@ -98,6 +100,8 @@ vi.mock('@/services/onlineMusic/omni', () => ({
         canPlayExternally: () => false,
         getProviderLabel: (id: string) => id,
         getPersonalFm: () => env.self.fmBatch ?? Promise.resolve([]),
+        getQueueContinuationKey: () => env.self.endless ? 'saved-mix' : null,
+        getQueueContinuation: () => env.self.endlessBatch ?? Promise.resolve([]),
         getSongReplacement: async (song: { id: string }) => env.self.replacementFor.get(String(song.id)) ?? null,
         getSongDetail: async (providerId: string, id: number | string) => {
             env.self.detailCalls.push([providerId, id]);
@@ -209,6 +213,8 @@ beforeEach(() => {
     env.self.unavailable.clear();
     env.self.replacementFor.clear();
     env.self.fmBatch = null;
+    env.self.endless = false;
+    env.self.endlessBatch = null;
     env.self.detailGate = null;
     env.self.detailCalls.length = 0;
     env.self.missingDetail.clear();
@@ -262,6 +268,60 @@ function mount() {
     const queue = render();
     return { queue, render, persistLastPlaybackCache };
 }
+
+describe('endless Mix playback', () => {
+    it('waits for the next batch at the tail and advances to the new song', async () => {
+        playerWith([a, b], b);
+        env.self.endless = true;
+        const gate = deferred<unknown[]>();
+        env.self.endlessBatch = gate.promise;
+        const { queue } = mount();
+        const next = queue.handleNextTrack({ allowStopOnMissing: true });
+        await settle();
+        expect(store().currentSong?.id).toBe(b.id);
+        gate.resolve([b, c, c]);
+        await next;
+        await settle();
+        expect(keys(store().playQueue)).toEqual(keys([a, b, c]));
+        expect(store().currentSong?.id).toBe(c.id);
+    });
+    it('does not restart the initial batch when a refill has no new songs', async () => {
+        playerWith([a, b], b);
+        env.self.endless = true;
+        env.self.endlessBatch = Promise.resolve([a, b]);
+        const { queue } = mount();
+        await queue.handleNextTrack({ allowStopOnMissing: true });
+        expect(store().currentSong?.id).toBe(b.id);
+        expect(store().playerState).toBe(PlayerState.IDLE);
+    });
+    it('preserves a refill arriving while the next song loads its audio', async () => {
+        playerWith([a, b], a);
+        env.self.endless = true;
+        const { queue } = mount();
+        const release = holdAddress(b);
+        const playing = queue.playSong(b, store().playQueue);
+        await settle();
+        setPlayQueue([...store().playQueue, c]);
+        release();
+        await playing;
+        expect(keys(store().playQueue)).toEqual(keys([a, b, c]));
+        expect(store().currentSong?.id).toBe(b.id);
+    });
+    it('discards the refill and pending advance when the queue is replaced', async () => {
+        playerWith([a, b], b);
+        env.self.endless = true;
+        const gate = deferred<unknown[]>();
+        env.self.endlessBatch = gate.promise;
+        const { queue } = mount();
+        const next = queue.handleNextTrack({ allowStopOnMissing: true });
+        await settle();
+        replaceWhole([x, y]);
+        gate.resolve([c]);
+        await next;
+        expect(keys(store().playQueue)).toEqual(keys([x, y]));
+        expect(store().currentSong?.id).toBe(b.id);
+    });
+});
 
 describe('a play that lands after the queue was replaced whole', () => {
     it('swaps itself into the new queue when that queue holds it, and saves and fetches around the new queue', async () => {

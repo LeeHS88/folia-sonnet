@@ -5,6 +5,7 @@ const songCacheMock = vi.hoisted(() => vi.fn());
 const sourceMock = vi.hoisted(() => vi.fn());
 const lyricsMock = vi.hoisted(() => vi.fn());
 const otherArtistNameMock = vi.hoisted(() => vi.fn());
+const lyricIdentityMock = vi.hoisted(() => vi.fn(() => null as unknown));
 const autoMatchMock = vi.hoisted(() => vi.fn());
 const prefersOwnWordByWordMock = vi.hoisted(() => vi.fn(() => false));
 const loadLyricsStateMock = vi.hoisted(() => vi.fn());
@@ -28,6 +29,7 @@ vi.mock('@/services/onlineMusic/omni', () => ({
         getAudioSource: sourceMock,
         getLyrics: lyricsMock,
         getAlternateArtistName: otherArtistNameMock,
+        getLyricMatchIdentity: lyricIdentityMock,
         resolveAudioQuality: (_providerId: string, preference: string) => preference,
         isPreviewAudioSource: () => false,
         prefersOwnWordByWordLyrics: prefersOwnWordByWordMock,
@@ -412,6 +414,7 @@ describe('online QQ lyric candidate plumbing', () => {
         vi.clearAllMocks();
         songCacheMock.mockResolvedValue(null);
         loadLyricsStateMock.mockResolvedValue(null);
+        lyricIdentityMock.mockReturnValue(null);
     });
 
     it('passes the already-loaded QQ song and lyrics to auto-match as its provider candidate', async () => {
@@ -471,6 +474,37 @@ describe('online QQ lyric candidate plumbing', () => {
         expect(otherArtistNameMock).not.toHaveBeenCalled();
         expect(await options.alternateArtist()).toBe('Oasis');
         expect(otherArtistNameMock).toHaveBeenCalledExactlyOnceWith(ytmSong);
+    });
+
+    it('uses provider-cleaned identity automatically and saves the lyrics against the original video', async () => {
+        lyricIdentityMock.mockReturnValue({ title: '流離', artist: '盧盧快閉嘴', durationMs: 280000, strictRecordingMatch: true });
+        lyricsMock.mockResolvedValue({ lyrics: null, isPureMusic: false });
+        const lyrics = { lines: [{ startTime: 1, endTime: 3, fullText: 'line', words: [] }], isWordByWord: true };
+        autoMatchMock.mockResolvedValue({ lyrics, source: 'qq', id: 123, song });
+        const onLyrics = vi.fn();
+        await loadOnlineSongLyrics(song, null, null, { isCurrent: () => true, onLyrics, onDone: vi.fn() });
+        expect(autoMatchMock).toHaveBeenCalledWith('流離', '盧盧快閉嘴', 280000, expect.objectContaining({ strictRecordingMatch: true, alternateArtist: undefined }));
+        expect(saveLyricsStateMock).toHaveBeenCalledWith(song, expect.objectContaining({ hasOnlineOverride: true, onlineOverrideLyrics: lyrics, matchedLyricsSource: 'qq' }));
+        expect(onLyrics).toHaveBeenCalledWith(lyrics);
+        lyricIdentityMock.mockReturnValue(null);
+    });
+
+    it('does not display or save a late automatic result after the song changes', async () => {
+        lyricsMock.mockResolvedValue({ lyrics: null, isPureMusic: false });
+        let current = true;
+        autoMatchMock.mockImplementationOnce(async () => { current = false; return { lyrics: { lines: [] }, source: 'qq', id: 1, song }; });
+        const onLyrics = vi.fn();
+        await loadOnlineSongLyrics(song, null, null, { isCurrent: () => current, onLyrics, onDone: vi.fn() });
+        expect(saveLyricsStateMock).not.toHaveBeenCalled();
+        expect(onLyrics).not.toHaveBeenCalled();
+    });
+
+    it('keeps a manual selection made during an automatic search', async () => {
+        lyricsMock.mockResolvedValue({ lyrics: null, isPureMusic: false });
+        autoMatchMock.mockResolvedValue({ lyrics: { lines: [] }, source: 'qq', id: 1, song });
+        loadLyricsStateMock.mockResolvedValueOnce(null).mockResolvedValueOnce({ hasOnlineOverride: true, lyricsSource: 'online' });
+        await loadOnlineSongLyrics(song, null, null, { isCurrent: () => true, onLyrics: vi.fn(), onDone: vi.fn() });
+        expect(saveLyricsStateMock).not.toHaveBeenCalled();
     });
 
     it('reports done before the auto-match search finishes, so audio never waits on it', async () => {

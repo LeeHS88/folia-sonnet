@@ -1,4 +1,4 @@
-import type { UnifiedSong } from '../../../types';
+import type { SongResult, UnifiedSong } from '../../../types';
 import { OnlineProviderError } from '../../../types/onlineMusic';
 import type { OnlineCatalogProvider, ProviderCollection } from '../../../types/onlineMusic';
 import { createYtmPager, normalizeYtmCollection, normalizeYtmSong, ytmSlicePage } from './ytmNormalize';
@@ -79,7 +79,20 @@ export const ytmPlaylistTracks = (id: string, limit: number, offset: number, asA
 );
 
 const isCatalogAlbum = (id: string) => id.startsWith('MPRE');
-const needsCatalogRefs = (song: UnifiedSong) => !song.album.id || song.artists.some(artist => !artist.id);
+const needsCatalogRefs = (song: UnifiedSong) => !song.durationMs || !song.album.id || song.artists.some(artist => !artist.id);
+
+const savedMixId = (id: unknown): id is string => typeof id === 'string' && /^youtube_mix_RD[\w-]{1,112}$/.test(id);
+const mixKey = (song: SongResult): string | null => {
+    const source = song.sourceRef;
+    const id = source?.kind === 'online' && source.providerId === 'ytm' ? source.providerData?.youtubeMixId : null;
+    return savedMixId(id) ? id : null;
+};
+const mixSongs = (items: YtmWireSong[], id: string): UnifiedSong[] => items.map(item => {
+    const song = normalizeYtmSong(item);
+    return savedMixId(id) && song.sourceRef.kind === 'online'
+        ? { ...song, sourceRef: { ...song.sourceRef, providerData: { ...song.sourceRef.providerData, youtubeMixId: id } } }
+        : song;
+});
 
 // A playlist the account is offered to save to its library: one with a page of its own (a mix
 // has none) that is not the liked-music list and not marked as the account's own. Only a library
@@ -104,6 +117,18 @@ export const ytmAlbumSaveParams = async (id: string): Promise<{ id: string; albu
 };
 
 export const ytmCatalog: OnlineCatalogProvider = {
+    getQueueContinuationKey: mixKey,
+    async getQueueContinuation(song) {
+        const id = mixKey(song);
+        if (!id || song.sourceRef?.kind !== 'online') return [];
+        // WEB returns a sliding window around the requested video: retain only its successors.
+        // Asking from the tail of that window yields another window, without the initial-page cache.
+        const videoId = song.sourceRef.mediaId;
+        const page = await requestYtm<YtmWirePage<YtmWireSong>>('mix', { id, videoId });
+        const index = page.items.findIndex(item => item.id === videoId);
+        if (index < 0) throw new OnlineProviderError('invalid-response', 'YouTube Mix lost its queue position', 'ytm');
+        return mixSongs(page.items.slice(index + 1), id);
+    },
     canResolveSongCatalogRefs: song => song.sourceRef?.kind === 'online' && song.sourceRef.providerId === 'ytm',
     // Rows from playlists carry display names only; the public watch page of the same video names
     // the artist and album by id and has the square cover.
@@ -126,7 +151,7 @@ export const ytmCatalog: OnlineCatalogProvider = {
         if (collection?.providerData?.mix !== true) return ytmPlaylistTracks(String(id), limit, offset, collection?.isOwned === true);
         const first = collection.providerData.videoId;
         const mix = await mixPages.get(typeof first === 'string' ? `${id} ${first}` : String(id), offset > 0);
-        return ytmSlicePage(mix.items.map(normalizeYtmSong), offset, limit);
+        return ytmSlicePage(mixSongs(mix.items, String(id)), offset, limit);
     },
     // The library card already holds everything a playlist page would add.
     getPlaylistDetail: async (_id, collection) => collection ?? null,

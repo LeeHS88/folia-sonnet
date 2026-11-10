@@ -487,6 +487,30 @@ describe('YouTube Music provider', () => {
         expect(request).toHaveBeenCalledTimes(13);
     });
 
+    it('continues saved WEB Mixes after the tail, carrying their identity through later batches', async () => {
+        const catalog = ytmProvider.catalog!;
+        const id = 'youtube_mix_RDm9SMT5ipbxk';
+        const mix = normalizeYtmCollection({ id, mix: true });
+        request.mockResolvedValueOnce({ items: [wireSong('m9SMT5ipbxk'), wireSong('ZRtdQ81jPUQ')] });
+        const first = await catalog.getPlaylistTracks!(id, 50, 0, mix);
+        const tail = first.items[1];
+        expect(catalog.getQueueContinuationKey!(tail)).toBe(id);
+        const callsBeforePlay = request.mock.calls.length;
+        expect(await ytmProvider.playback!.getPlayedSong!(tail)).toBeNull();
+        expect(request.mock.calls).toHaveLength(callsBeforePlay);
+        request.mockResolvedValueOnce({ items: [wireSong('m9SMT5ipbxk'), wireSong('ZRtdQ81jPUQ'), wireSong('nextVideo01')] });
+        const more = await catalog.getQueueContinuation!(tail);
+        expect(request).toHaveBeenLastCalledWith('mix', { id, videoId: 'ZRtdQ81jPUQ' });
+        expect(more.map(song => song.id)).toEqual(['nextVideo01']);
+        expect(catalog.getQueueContinuationKey!(more[0])).toBe(id);
+        request.mockResolvedValueOnce({ items: [wireSong('nextVideo01'), wireSong('nextVideo02')] });
+        expect((await catalog.getQueueContinuation!(more[0])).map(song => song.id)).toEqual(['nextVideo02']);
+        expect(request).toHaveBeenLastCalledWith('mix', { id, videoId: 'nextVideo01' });
+        expect(catalog.getQueueContinuationKey!(normalizeYtmSong(wireSong()))).toBeNull();
+        request.mockResolvedValueOnce({ items: [wireSong('missingTail')] });
+        await expect(catalog.getQueueContinuation!(tail)).rejects.toMatchObject({ code: 'invalid-response' });
+    });
+
     it('reads a mix card as one queue, kept so that its pages are pages of the same list', async () => {
         const mix = normalizeYtmCollection({ id: 'RDEMfixture', type: 'playlist', name: 'A mix', coverUrl: '', mix: true, videoId: 'm9SMT5ipbxk' });
         request.mockResolvedValue({ items: ids(5).map(id => tileSong(id)) });
@@ -660,6 +684,17 @@ describe('YouTube Music provider', () => {
         request.mockClear();
         expect((await search('tides', 1, second.nextOffset)).items.map(song => song.id)).toEqual(['tides-2']);
         expect(request.mock.calls).toEqual([['search_songs', { continuation: 'tides#2' }]]);
+    });
+
+    it('recovers missing upload duration for automatic lyrics without changing the video identity', async () => {
+        const song = normalizeYtmSong(wireSong('m9SMT5ipbxk', { name: 'Singer - Song [Lyrics]', durationMs: 0 }));
+        request.mockResolvedValue(wireSong('m9SMT5ipbxk', { durationMs: 201000 }));
+        expect(await ytmProvider.lyrics!.resolveMatchIdentity!(song)).toMatchObject({ title: 'Song', artist: 'Singer', durationMs: 201000, strictRecordingMatch: true });
+        expect(request).toHaveBeenCalledExactlyOnceWith('song_detail', { id: 'm9SMT5ipbxk' });
+        await ytmProvider.lyrics!.resolveMatchIdentity!(song);
+        expect(request).toHaveBeenCalledTimes(1);
+        expect(song.durationMs).toBe(0);
+        expect(song.sourceRef).toMatchObject({ mediaId: 'm9SMT5ipbxk' });
     });
 
     it('says in the log whether a track came with lyrics of its own', async () => {

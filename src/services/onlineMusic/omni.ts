@@ -1358,6 +1358,15 @@ export const omni = {
     },
 
     // Another name the song's artist may be listed under elsewhere, when its provider knows one.
+    getLyricMatchIdentity(song: SongResult) {
+        return getOnlineMusicProviderForSong(song)?.lyrics?.getMatchIdentity?.(song) ?? null;
+    },
+
+    async resolveLyricMatchIdentity(song: SongResult) {
+        const lyrics = getOnlineMusicProviderForSong(song)?.lyrics;
+        return lyrics?.resolveMatchIdentity ? lyrics.resolveMatchIdentity(song) : lyrics?.getMatchIdentity?.(song) ?? null;
+    },
+
     async getAlternateArtistName(song: SongResult): Promise<string | null> {
         return await getOnlineMusicProviderForSong(song)?.lyrics?.getAlternateArtistName?.(song) ?? null;
     },
@@ -1371,6 +1380,18 @@ export const omni = {
     async getSongReplacement(song: SongResult): Promise<OmniSongReplacement | null> {
         const provider = providerForSong(song);
         return runRequest(provider, 'audio', async () => await (provider.playback?.getReplacement?.(song) ?? null));
+    },
+
+    getQueueContinuationKey(song: SongResult): string | null {
+        const provider = getOnlineMusicProviderForSong(song);
+        const key = provider?.catalog?.getQueueContinuationKey?.(song);
+        return key ? `${provider!.id}:${key}` : null;
+    },
+
+    async getQueueContinuation(song: SongResult): Promise<UnifiedSong[]> {
+        const provider = getOnlineMusicProviderForSong(song);
+        if (!provider?.catalog?.getQueueContinuationKey?.(song)) return [];
+        return runRequest(provider, 'collection', async () => provider.catalog?.getQueueContinuation?.(song) ?? []);
     },
 
     async getCollectionTracks(collection: OmniCollection, page: PageInput): Promise<OmniPage<UnifiedSong>> {

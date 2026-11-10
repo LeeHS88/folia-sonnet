@@ -303,7 +303,8 @@ export async function loadOnlineSongLyrics(
 
   const settingsLyricSettings = useLyricSettingsStore.getState();
     const shouldAutoMatch = settingsLyricSettings.autoUseBestLyric && !onlineLyricsState?.hasOnlineOverride
-        && !keepsOwnWordByWord(parsedLyrics);
+        && !keepsOwnWordByWord(parsedLyrics)
+        && onlineLyricsState?.lyricsSource !== 'imported';
 
     if (shouldAutoMatch) {
         // The lyrics in hand are already displayable, so hand them over and report done BEFORE the
@@ -320,14 +321,17 @@ export async function loadOnlineSongLyrics(
             onAutoMatchStart?.();
             const metadata = getProviderSongMetadata(song);
             const artistName = metadata.artists.map(a => a.name).join(', ');
+            const identity = await omni.resolveLyricMatchIdentity?.(song) ?? omni.getLyricMatchIdentity?.(song);
+            if (!isCurrent()) return;
             const ownProviderId = song.sourceRef?.kind === 'online' ? song.sourceRef.providerId : null;
             const ownLyricSource = getPlatformLyricSource(ownProviderId);
-            const bestMatch = await autoMatchBestLyric(song.name, artistName, metadata.durationMs, {
-                album: metadata.album?.name,
+            const bestMatch = await autoMatchBestLyric(identity?.title ?? song.name, identity?.artist ?? artistName, identity?.durationMs ?? metadata.durationMs, {
+                album: identity ? identity.album : metadata.album?.name,
+                strictRecordingMatch: identity?.strictRecordingMatch,
                 preferredSource: resolveLyricSourcePreference(settingsLyricSettings, song),
                 keepOwnWordTiming: settingsLyricSettings.keepProviderWordTiming,
-                alternateArtist: () => omni.getAlternateArtistName(song),
-                searchAlias: () => omni.getLyricSearchAlias(song),
+                alternateArtist: identity ? undefined : () => omni.getAlternateArtistName(song),
+                searchAlias: identity ? undefined : () => omni.getLyricSearchAlias(song),
                 providerCandidate: ownLyricSource
                     ? {
                         providerId: ownLyricSource.id,
@@ -343,6 +347,15 @@ export async function loadOnlineSongLyrics(
                     }
                     : undefined
             });
+            if (!isCurrent()) return;
+            // A manual match/import made while the background search ran has the final say.
+            const latestSelection = await loadOnlineLyricsState(song);
+            if (!isCurrent()) return;
+            if (latestSelection?.hasOnlineOverride || latestSelection?.lyricsSource === 'imported') {
+                onStateChange?.(latestSelection);
+                onLyrics(resolveOnlineLyrics(latestSelection, parsedLyrics));
+                return;
+            }
             if (bestMatch && 'lyrics' in bestMatch && bestMatch.source !== ownProviderId) {
                 const overrideState: OnlineLyricsState = {
                     lyricsSource: 'online',
@@ -353,6 +366,7 @@ export async function loadOnlineSongLyrics(
                     matchedLyricsProviderPlatform: bestMatch.matchedLyricsProviderPlatform,
                 };
                 await saveOnlineLyricsState(song, overrideState);
+                if (!isCurrent()) return;
                 resolvedLyrics = bestMatch.lyrics;
                 finalState = overrideState;
                 onStateChange?.(overrideState);
@@ -363,6 +377,7 @@ export async function loadOnlineSongLyrics(
                 // landed here and had its perfectly good lyrics thrown away as instrumental.
                 const pureMusic = markOnlineLyricsPureMusic(onlineLyricsState);
                 await saveOnlineLyricsState(song, pureMusic);
+                if (!isCurrent()) return;
                 resolvedLyrics = null;
                 finalState = pureMusic;
                 onStateChange?.(pureMusic);

@@ -15,6 +15,7 @@ import { getLyricSource } from './lyricSources';
 import type { PlatformLyricSource } from './lyricSources';
 import type { LocalSongMetadataLyricCandidate } from './localSongMatchContext';
 import { asksBeforeOwnWordTiming, keepsOwnWordTiming } from './ownWordTiming';
+import { isSameLyricRecording } from './recordingMatch';
 
 // src/utils/lyrics/autoMatchBestLyric.ts
 // Utility module for preferring word-by-word lyrics while retaining a usable line-by-line fallback.
@@ -41,6 +42,7 @@ export interface AutoMatchProviderCandidate {
 }
 
 export interface AutoMatchBestLyricOptions {
+    strictRecordingMatch?: boolean;
     album?: string;
     preferredSource?: LyricProviderSource;
     metadataCandidate?: LocalSongMetadataLyricCandidate;
@@ -252,7 +254,8 @@ async function matchUnderArtist(
                 return exactCandidate ?? null;
             }
         }
-        return selectBestCandidate(source, songs, targetSong);
+        return selectBestCandidate(source, options.strictRecordingMatch
+            ? songs.filter(song => isSameLyricRecording(targetSong, song)) : songs, targetSong);
     };
 
     // The source's lyrics for `song`: those already in hand when it is the active song, else fetched.

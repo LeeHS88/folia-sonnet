@@ -91,7 +91,7 @@ describe('lyrics architecture', () => {
         expect(yrcWrapperContent).toContain('parseCoreYRC');
     });
 
-    it('gives every auto-match of an online song the way to the artist\'s other name', async () => {
+    it('keeps alternate artist lookup for catalog identities while allowing upload identities to avoid the channel name', async () => {
         const callers = [
             'src/services/onlinePlayback.ts',
             'src/services/prefetchService.ts',
@@ -100,8 +100,9 @@ describe('lyrics architecture', () => {
 
         for (const file of callers) {
             const content = await readRepoFile(file);
-            expect(content, file).toMatch(/alternateArtist: \(\) => omni\.getAlternateArtistName\(/);
-            expect(content, file).toMatch(/searchAlias: \(\) => omni\.getLyricSearchAlias\(/);
+            expect(content, file).toMatch(/alternateArtist: (?:identity \? undefined : )?\(\) => omni\.getAlternateArtistName\(/);
+            expect(content, file).toMatch(/searchAlias: (?:identity \? undefined : )?\(\) => omni\.getLyricSearchAlias\(/);
+            expect(content, file).toContain('omni.getLyricMatchIdentity');
         }
     });
 

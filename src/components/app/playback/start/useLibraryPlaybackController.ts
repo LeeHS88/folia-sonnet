@@ -1623,15 +1623,17 @@ export function useLibraryPlaybackController({
             const currentSongMetadata = getProviderSongMetadata(currentSong);
             const artistName = currentSongMetadata.artists.map(artist => artist.name).filter(Boolean).join(', ');
             const albumName = currentSongMetadata.album?.name || '';
+            const identity = await omni.resolveLyricMatchIdentity?.(currentSong) ?? omni.getLyricMatchIdentity?.(currentSong);
             const sourceRef = getPlaybackSourceRef(currentSong);
             const ownLyricsResult = await omni.getLyrics(currentSong);
             const ownLyricSource = getPlatformLyricSource(sourceRef.kind === 'online' ? sourceRef.providerId : null);
-            const bestMatch = await autoMatchBestLyric(currentSong.name, artistName, currentSongMetadata.durationMs, {
-                album: albumName,
+            const bestMatch = await autoMatchBestLyric(identity?.title ?? currentSong.name, identity?.artist ?? artistName, identity?.durationMs ?? currentSongMetadata.durationMs, {
+                album: identity ? identity.album : albumName,
+                strictRecordingMatch: identity?.strictRecordingMatch,
                 preferredSource: resolveLyricSourcePreference(settingsLyricSettings, currentSong),
                 keepOwnWordTiming: settingsLyricSettings.keepProviderWordTiming,
-                alternateArtist: () => omni.getAlternateArtistName(currentSong),
-                searchAlias: () => omni.getLyricSearchAlias(currentSong),
+                alternateArtist: identity ? undefined : () => omni.getAlternateArtistName(currentSong),
+                searchAlias: identity ? undefined : () => omni.getLyricSearchAlias(currentSong),
                 providerCandidate: ownLyricSource
                     ? { providerId: ownLyricSource.id, song: currentSong, lyricsResult: ownLyricsResult }
                     : undefined,

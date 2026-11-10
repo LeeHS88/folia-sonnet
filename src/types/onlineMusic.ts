@@ -605,7 +605,18 @@ export interface OnlineExternalPlaybackProvider {
 /** An alternate title and artist that belong to the same song. */
 export interface ProviderLyricSearchAlias { song: SongResult; title: string; artist: string; album?: string }
 
+export interface LyricMatchIdentity {
+    title: string;
+    artist: string;
+    durationMs: number;
+    album?: string;
+    /** Inferred upload metadata needs stronger recording checks than catalog metadata. */
+    strictRecordingMatch?: boolean;
+}
+
 export interface OnlineLyricsProvider {
+    getMatchIdentity?(song: SongResult): LyricMatchIdentity | null;
+    resolveMatchIdentity?(song: SongResult): Promise<LyricMatchIdentity | null>;
     getSearchAlias?(song: SongResult): Promise<ProviderLyricSearchAlias | null>;
     getLyrics(song: SongResult, context?: { userId?: MediaId | null }): Promise<ProviderLyricsResult>;
     /**
@@ -981,6 +992,10 @@ export interface OnlineLibraryProvider {
 }
 
 export interface OnlineCatalogProvider {
+    /** Identifies an endless stream carried by this song, or null for a finite collection. */
+    getQueueContinuationKey?(song: SongResult): string | null;
+    /** The next portion after this song, retaining the stream identity on its returned songs. */
+    getQueueContinuation?(song: SongResult): Promise<UnifiedSong[]>;
     canResolveSongCatalogRefs?(song: UnifiedSong): boolean;
     resolveSongCatalogRefs?(song: UnifiedSong): Promise<UnifiedSong>;
     getPlaylistTracks?(id: MediaId, limit: number, offset: number, collection?: ProviderCollection): Promise<ProviderPage<UnifiedSong>>;

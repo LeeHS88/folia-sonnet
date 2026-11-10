@@ -418,19 +418,22 @@ const prefetchSong = async (
                     lyrics: parsedLyrics,
                     keepOwn: settingsLyricSettings.keepProviderWordTiming,
                 }, preferredSource);
-                const shouldAutoMatch = autoUseBest && !onlineLyricsState?.hasOnlineOverride && !keepsOwnWordTiming;
+                const shouldAutoMatch = autoUseBest && !onlineLyricsState?.hasOnlineOverride && !keepsOwnWordTiming
+                    && onlineLyricsState?.lyricsSource !== 'imported';
 
                 if (shouldAutoMatch) {
                     try {
                         const metadata = getProviderSongMetadata(song);
                         const artistName = metadata.artists.map(a => a.name).join(', ');
+                        const identity = await omni.resolveLyricMatchIdentity?.(song) ?? omni.getLyricMatchIdentity?.(song);
                         const ownLyricSource = getPlatformLyricSource(sourceRef.providerId);
-                        const bestMatch = await autoMatchBestLyric(song.name, artistName, metadata.durationMs, {
-                            album: metadata.album?.name,
+                        const bestMatch = await autoMatchBestLyric(identity?.title ?? song.name, identity?.artist ?? artistName, identity?.durationMs ?? metadata.durationMs, {
+                            album: identity ? identity.album : metadata.album?.name,
+                            strictRecordingMatch: identity?.strictRecordingMatch,
                             preferredSource,
                             keepOwnWordTiming: settingsLyricSettings.keepProviderWordTiming,
-                            alternateArtist: () => omni.getAlternateArtistName(song),
-                            searchAlias: () => omni.getLyricSearchAlias(song),
+                            alternateArtist: identity ? undefined : () => omni.getAlternateArtistName(song),
+                            searchAlias: identity ? undefined : () => omni.getLyricSearchAlias(song),
                             ...(ownLyricSource
                                 ? { providerCandidate: {
                                     providerId: ownLyricSource.id,
@@ -446,7 +449,10 @@ const prefetchSong = async (
                                 } }
                                 : {})
                         });
-                        if (bestMatch && 'lyrics' in bestMatch && bestMatch.source !== sourceRef.providerId) {
+                        const latestSelection = await loadOnlineLyricsState(song);
+                        if (latestSelection?.hasOnlineOverride || latestSelection?.lyricsSource === 'imported') {
+                            finalLyrics = resolveOnlineLyrics(latestSelection, parsedLyrics);
+                        } else if (bestMatch && 'lyrics' in bestMatch && bestMatch.source !== sourceRef.providerId) {
                             const overrideState: OnlineLyricsState = {
                                 lyricsSource: 'online',
                                 matchedSongId: bestMatch.id,

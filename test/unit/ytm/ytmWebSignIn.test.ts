@@ -835,11 +835,11 @@ describe('YouTube Music desktop bridge with a web sign-in', () => {
         expect(await webOnly.bridge.request('user_playlists')).toEqual({ ok: true, data: { items: [] } });
         expect(await webOnly.bridge.request('user_albums', { continuation: 'grid-2' })).toEqual({ ok: true, data: { items: [] } });
         expect(await webOnly.bridge.request('playlist', { id: 'LM' })).toEqual({ ok: true, data: { items: [] } });
-        expect(asked).toEqual(['web /browse YTMUSIC false FEmusic_liked_playlists', 'web /browse YTMUSIC false grid-2', 'web /browse YTMUSIC false VLLM']);
+        expect(asked).toEqual(['web /browse YTMUSIC false FEmusic_liked_playlists', 'web /browse WEB false FEplaylist_aggregation', 'web /browse YTMUSIC false grid-2', 'web /browse YTMUSIC false VLLM']);
         // Saving and playlist changes go the same way (ytmWebWrites.test.ts).
         expect(await webOnly.bridge.request('list_saved', { id: ALBUM_LIST })).toMatchObject({ ok: false, error: { code: 'invalid-response' } });
         expect(await webOnly.bridge.request('playlist_edit', { id: 'PLown01', action: 'add', videoIds: VIDEO })).toMatchObject({ ok: false, error: { code: 'unavailable' } });
-        expect(asked.slice(3)).toEqual([`web /browse YTMUSIC false VL${ALBUM_LIST}`, 'web /browse/edit_playlist YTMUSIC false ']);
+        expect(asked.slice(4)).toEqual([`web /browse YTMUSIC false VL${ALBUM_LIST}`, 'web /browse/edit_playlist YTMUSIC false ']);
         for (const params of [{ continuation: '' }, { continuation: 7 }, { continuation: 'x'.repeat(8193) }]) {
             expect(await webOnly.bridge.request('user_playlists', params)).toMatchObject({ ok: false, error: { code: 'invalid-response' } });
         }
@@ -926,6 +926,43 @@ describe('YouTube Music desktop bridge with a web sign-in', () => {
         } finally {
             vi.useRealTimers();
         }
+    it('appends saved WEB Mixes, follows their own continuation, and reads their queue as the account', async () => {
+        const calls: any[] = [];
+        const id = `RD${VIDEO}`;
+        const mixCard = { radioRenderer: { title: { simpleText: 'Saved Mix' }, navigationEndpoint: { watchEndpoint: { playlistId: id, videoId: VIDEO } } } };
+        const { bridge, yt } = setup({ web: true, answer: (kind, endpoint, body) => {
+            calls.push({ kind, endpoint, ...body });
+            if (body.client === 'YTMUSIC') return { data: gridPage([playlistsTab[1]]) };
+            if (endpoint === '/next') return { data: marked('1', { contents: { twoColumnWatchNextResults: { playlist: { playlist: {
+                playlistId: id, contents: [{ playlistPanelVideoRenderer: { videoId: VIDEO, title: { simpleText: 'Original video' }, lengthText: { simpleText: '4:16' } } }],
+            } } } } }) };
+            return { data: marked('1', { contents: { richGridRenderer: { contents: body.continuation ? [] : [mixCard,
+                { continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token: 'web-more' } } } }],
+            } } }) };
+        } });
+        expect((await bridge.request('user_playlists')).data).toEqual({ items: [
+            expect.objectContaining({ id: 'LM' }),
+            { id: `youtube_mix_${id}`, type: 'playlist', name: 'Saved Mix', coverUrl: '', mix: true, videoId: VIDEO },
+        ], continuation: 'youtube-mixes web-more' });
+        expect((await bridge.request('user_playlists', { continuation: 'youtube-mixes web-more' })).data).toEqual({ items: [] });
+        expect((await bridge.request('mix', { id: `youtube_mix_${id}`, videoId: VIDEO })).data.items).toEqual([
+            { id: VIDEO, name: 'Original video', artists: [], album: { id: '', name: '', coverUrl: '' }, durationMs: 256000, video: true },
+        ]);
+        expect(calls.map(call => [call.client, call.browseId ?? call.continuation ?? call.playlistId])).toEqual([
+            ['YTMUSIC', 'FEmusic_liked_playlists'], ['WEB', 'FEplaylist_aggregation'], ['WEB', 'web-more'], ['WEB', id],
+        ]);
+        expect(yt.of('guest')).toHaveLength(0);
+        expect(await bridge.request('mix', { id: 'youtube_mix_PLinvalid' })).toMatchObject({ ok: false, error: { code: 'invalid-response' } });
+    });
+
+    it('keeps music playlists when the supplementary WEB library fails, but never substitutes a guest Mix', async () => {
+        const { bridge, yt } = setup({ web: true, answer: (_kind, _endpoint, body) => {
+            if (body.client === 'WEB') throw new Error('WEB endpoint unavailable');
+            return { data: gridPage([playlistsTab[1]]) };
+        } });
+        expect((await bridge.request('user_playlists')).data.items).toEqual([expect.objectContaining({ id: 'LM' })]);
+        expect(await bridge.request('mix', { id: `youtube_mix_RD${VIDEO}`, videoId: VIDEO })).toMatchObject({ ok: false });
+        expect(yt.of('guest')).toHaveLength(0);
     });
 
     it('reads a playlist of the account as the guest read of a public one is read: a shelf, then the rows each further page appends', async () => {
