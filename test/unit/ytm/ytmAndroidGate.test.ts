@@ -100,11 +100,12 @@ describe('the YouTube Music gate on Android', () => {
     });
 
     it('keeps the not-yet-port operations honest: authentication first, then unsupported', async () => {
+        // playlist and user_playlists are ported (ytmAndroidMixes.test.ts); the gate still holds them.
         for (const operation of ['playlist', 'user_playlists', 'user_albums', 'explore', 'playlist_edit', 'list_save', 'list_saved', 'song_like'] as YtmOperation[]) {
             expect(await requestYtmOnAndroid(operation, { id: 'x' })).toMatchObject({ ok: false, error: { code: 'auth-required' } });
         }
         await signedIn();
-        for (const operation of ['playlist', 'user_playlists', 'user_albums', 'explore', 'playlist_edit', 'list_save', 'list_saved', 'song_like'] as YtmOperation[]) {
+        for (const operation of ['user_albums', 'explore', 'playlist_edit', 'list_save', 'list_saved', 'song_like'] as YtmOperation[]) {
             expect(await requestYtmOnAndroid(operation, { id: 'x' })).toMatchObject({ ok: false, error: { code: 'unsupported' } });
         }
     });

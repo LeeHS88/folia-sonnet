@@ -13,6 +13,9 @@ import { setYtmNativeAgent, ytmNativeFetch } from './ytmNativeFetch';
 import { signInWithYtmNative } from './ytmAndroidSignIn';
 import { readYtmAccountHistory } from './ytmAndroidHistory';
 import { accountFromYtmWebList } from './ytmAndroidAccount';
+import {
+    MIX_PAGE_PREFIX, MIX_PREFIX, playlistFromRow, readGrid, readSavedMixQueue, readSavedMixesPage, signedInMarkOf, youtubeMixId,
+} from './ytmAndroidLibrary';
 
 // src/services/onlineMusic/ytm/android/ytmAndroidBridge.ts
 // Android App 上的 YouTube Music：桌面版的这些操作在主进程（electron/ytm/ytmApiBridge.cjs）里跑，
@@ -522,6 +525,46 @@ const handlers: Partial<Record<YtmOperation, Handler>> = {
         return { ...artist, albums };
     },
 
+    // The account's library playlists (YouTube Music's library tab), followed after its last page by
+    // the saved Mixes of the regular YouTube library. A Mix outage must not hide ordinary playlists.
+    async user_playlists(params) {
+        const continuation = pageToken(params.continuation);
+        const yt = await signedSession();
+        const readMixes = async (token?: string) => {
+            const page: any = await yt.actions.execute('/browse', {
+                ...(token ? { continuation: token } : { browseId: 'FEplaylist_aggregation' }), client: 'WEB', parse: false,
+            });
+            if (signedInMarkOf(page.data) !== '1') fail('unavailable', 'YouTube did not return the signed-in Mix library');
+            const result = readSavedMixesPage(page.data);
+            console.log(`[Ytm] Saved YouTube Mixes: ${result.items.length} entries${result.continuation ? ', more follow' : ''}`);
+            return { items: result.items, ...(result.continuation ? { continuation: MIX_PAGE_PREFIX + result.continuation } : {}) };
+        };
+        if (continuation?.startsWith(MIX_PAGE_PREFIX)) {
+            const token = continuation.slice(MIX_PAGE_PREFIX.length);
+            if (!token) fail('invalid-response', 'Invalid Mix page token');
+            return readMixes(token);
+        }
+        const raw: any = await yt.actions.execute('/browse', {
+            ...(continuation ? { continuation } : { browseId: 'FEmusic_liked_playlists' }), client: 'YTMUSIC', parse: false,
+        });
+        if (signedInMarkOf(raw.data) === '0') fail('auth-required', 'YouTube Music did not take the sign-in');
+        const grid = readGrid(raw.data);
+        const items = grid.rows.map(playlistFromRow).filter(Boolean) as YtmWireCollection[];
+        if (!grid.continuation) {
+            try {
+                const mixes = await readMixes();
+                return { ...mixes, items: [...items, ...mixes.items] };
+            } catch (error) {
+                if (error instanceof YtmAndroidError && error.code === 'auth-required') throw error;
+                console.warn('[Ytm] Saved YouTube Mixes could not be read; music playlists remain available', logged(error));
+            }
+        }
+        return { items, ...(grid.continuation ? { continuation: grid.continuation } : {}) };
+    },
+
+    // The account's own read of a playlist (liked music, private playlists): the session is signed in.
+    playlist: params => handlers.public_playlist!(params),
+
     async public_playlist(params) {
         const id = entityId(params.id) ?? fail('invalid-response', 'Invalid playlist id');
         const continuation = pageToken(params.continuation);
@@ -533,8 +576,22 @@ const handlers: Partial<Record<YtmOperation, Handler>> = {
     },
 
     async mix(params) {
-        const id = entityId(params.id) ?? fail('invalid-response', 'Invalid mix id');
         const first = params.videoId === undefined ? undefined : videoId(params.videoId);
+        // A saved YouTube Mix: its personalized queue comes from the regular YouTube (WEB) client as
+        // the account. Asking again with the last queued video gives the window after it (endless refill).
+        if (typeof params.id === 'string' && params.id.startsWith(MIX_PREFIX)) {
+            const savedMix = youtubeMixId(params.id) ?? fail('invalid-response', 'Invalid YouTube Mix id');
+            const yt = await signedSession();
+            const page: any = await yt.actions.execute('/next', {
+                playlistId: savedMix, ...(first ? { videoId: first } : {}), client: 'WEB', parse: false,
+            });
+            if (signedInMarkOf(page.data) !== '1') fail('unavailable', 'YouTube did not return a signed-in Mix queue');
+            const queue = readSavedMixQueue(page.data, savedMix) ?? fail('invalid-response', 'YouTube did not return this Mix queue');
+            if (queue.items.length === 0) fail('unavailable', 'YouTube returned no playable entries for this Mix');
+            console.log(`[Ytm] Saved YouTube Mix: ${queue.items.length} songs`);
+            return queue;
+        }
+        const id = entityId(params.id) ?? fail('invalid-response', 'Invalid mix id');
         const [yt, { YTNodes }] = await Promise.all([signedSession(), loadLibrary()]);
         const page: any = await yt.actions.execute('/next', {
             playlistId: id, ...(first ? { videoId: first } : {}), client: 'YTMUSIC', parse: true,
