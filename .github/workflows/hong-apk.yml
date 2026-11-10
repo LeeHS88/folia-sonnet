@@ -1,0 +1,95 @@
+name: Hong's Folia APK
+
+# Builds an installable APK of this customized branch (saved YouTube Mixes, endless autoplay,
+# automatic lyric matching, artwork-only queue tiles) and publishes it as a GitHub Release.
+# It is signed with the Android debug key, which every phone accepts for sideloading; it needs no
+# secrets. Runs on every push to hong-custom, or by hand from the Actions tab.
+
+on:
+  push:
+    branches:
+      - hong-custom
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hong-apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: YouTube, playback and lyric tests
+        run: npx vitest run -c vitest.config.ts test/unit/ytm test/unit/playback test/unit/lyrics test/unit/onlinePlayback.test.ts
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties', 'android/variables.gradle') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Build web assets and sync to Android
+        run: npm run cap:sync:android
+
+      - name: Build APK
+        working-directory: ./android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Name the APK
+        id: name
+        run: |
+          set -euo pipefail
+          VERSION="$(node -e "process.stdout.write(require('./package.json').version)")"
+          STAMP="$(date -u +%Y%m%d-%H%M)"
+          APK="$(find android/app/build/outputs/apk/debug -name '*.apk' | head -1)"
+          mkdir -p out
+          cp "$APK" "out/Folia-Hong-${VERSION}-${STAMP}.apk"
+          echo "tag=hong-${VERSION}-${STAMP}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: folia-hong-apk
+          path: out/*.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.name.outputs.tag }}" out/*.apk \
+            --title "Folia (Hong) ${{ steps.name.outputs.version }}" \
+            --notes "Customized Android build: saved YouTube Mixes with endless autoplay, automatic lyric matching for YouTube uploads, artwork-only queue tiles. Debug-signed for sideloading." \
+            --target "${{ github.sha }}" --latest
