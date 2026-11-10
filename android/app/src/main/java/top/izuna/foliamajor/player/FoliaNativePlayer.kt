@@ -12,6 +12,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -1053,7 +1054,12 @@ class FoliaNativePlayer(context: Context, listener: Listener) {
             // 线程」—— 也就是 Capacitor 的桥线程，而位置上报会跑到别的线程上去，
             // 于是每 250ms 跨线程碰一次播放器。
             .setLooper(playerLooper)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
+            /*
+             * 网络地址交给 HTTP 数据源；本地文件（YouTube Music 在安卓上先下载到 cache/ytm-audio 再播）
+             * 和 content:// 由 DefaultDataSource 自己读。只给 HTTP 工厂的话，file:// 会直接
+             * ERROR_CODE_IO_UNSPECIFIED(2000)。请求头仍在 [httpFactory] 上改，DefaultDataSource 转交给它。
+             */
+            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(context, factory)))
             /*
              * 耳机拔出 / 蓝牙断开：立刻暂停，不转外放。
              *

@@ -20,7 +20,8 @@ Android port of Folia, 0.7.27.x) with the customizations made on the desktop Fol
 - **No sound for YouTube Music (fixed):** the port's native audio engine (ExoPlayer) was handed the
   WebView-only address of the downloaded song (`https://localhost/_capacitor_file_/…`) and failed with
   `ERROR_CODE_IO_NETWORK_CONNECTION_FAILED`. `toNativeMediaUrl` in `nativePlaybackEngine.ts` now
-  gives it the file itself.
+  gives it the file itself, and `FoliaNativePlayer.kt` now builds its players on `DefaultDataSource`
+  (it was HTTP-only, so any `file://` failed with `ERROR_CODE_IO_UNSPECIFIED`).
 
 ## Building
 
