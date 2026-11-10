@@ -15,6 +15,13 @@ Android port of Folia, 0.7.27.x) with the customizations made on the desktop Fol
 | Brave first for sign-in | — | Not needed: Android signs in inside the app. |
 | Automatic updates off | — | A sideloaded APK never updates itself. |
 
+## Fixes to the port itself
+
+- **No sound for YouTube Music (fixed):** the port's native audio engine (ExoPlayer) was handed the
+  WebView-only address of the downloaded song (`https://localhost/_capacitor_file_/…`) and failed with
+  `ERROR_CODE_IO_NETWORK_CONNECTION_FAILED`. `toNativeMediaUrl` in `nativePlaybackEngine.ts` now
+  gives it the file itself.
+
 ## Building
 
 `.github/workflows/hong-apk.yml` builds a debug-signed APK on every push to `hong-custom` (or by hand

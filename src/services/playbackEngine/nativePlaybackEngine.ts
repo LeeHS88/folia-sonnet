@@ -40,6 +40,24 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
  */
 export const NATIVE_PLAYBACK_ENABLED: boolean = true;
 
+
+/**
+ * A file the app downloaded (YouTube Music audio on Android) reaches the WebView as
+ * `https://localhost/_capacitor_file_/…` (Capacitor.convertFileSrc). That address exists only inside
+ * the WebView: ExoPlayer cannot open it and fails with ERROR_CODE_IO_NETWORK_CONNECTION_FAILED.
+ * The native player is handed the file (or content) URI the address stands for instead.
+ */
+export const toNativeMediaUrl = (url: string): string => {
+    try {
+        const parsed = new URL(url);
+        if (parsed.hostname !== 'localhost') return url;
+        for (const [marker, scheme] of [['/_capacitor_file_', 'file://'], ['/_capacitor_content_', 'content://']] as const) {
+            if (parsed.pathname.startsWith(marker)) return `${scheme}${parsed.pathname.slice(marker.length)}`;
+        }
+    } catch { /* not an absolute URL: leave it as it is */ }
+    return url;
+};
+
 class NativePlaybackEngine {
     private positionMs = 0;
     private durationMs = 0;
@@ -148,8 +166,9 @@ class NativePlaybackEngine {
         return this.durationMs > 0 ? this.durationMs / 1000 : 0;
     }
 
-    async setSource(url: string, options: { startPositionMs?: number | null; repeatMode?: number; songKey?: string | null } = {}): Promise<void> {
+    async setSource(webUrl: string, options: { startPositionMs?: number | null; repeatMode?: number; songKey?: string | null } = {}): Promise<void> {
         if (isNativePlaybackReconciling()) return;
+        const url = toNativeMediaUrl(webUrl);
         if (this.hasSource && this.currentUrl === url && (!options.songKey || options.songKey === this.songKey)) return;
         this.ensureSubscription();
         this.songKey = options.songKey ?? null;
