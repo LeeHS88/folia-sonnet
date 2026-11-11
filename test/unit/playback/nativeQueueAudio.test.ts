@@ -33,7 +33,7 @@ beforeEach(() => {
 
 describe('mirror entries with downloaded files', () => {
     it('adds the file of downloaded songs from one behind to eight ahead of the playing one', () => {
-        for (const item of queue) h.urls.set(item.id, local(item.id));
+        for (const item of queue) h.urls.set(item.id, local(String(item.id)));
         h.urls.set('s5', 'https://rr3---sn.googlevideo.com/videoplayback');
         const entries = withDownloadedAudio(queue, queue.map(item => entry(item.id)), 2);
         const urls = entries.map((item: { url?: string }) => item.url ?? null);
@@ -56,7 +56,7 @@ describe('mirror entries with downloaded files', () => {
 describe('downloading the songs ahead', () => {
     it('downloads the next ones that have no file yet, one after another, and announces each file', async () => {
         h.urls.set('s4', local('s4'));
-        h.warmup.mockImplementation(async (item: SongResult) => ({ audioUrl: local(item.id) }));
+        h.warmup.mockImplementation(async (item: SongResult) => ({ audioUrl: local(String(item.id)) }));
         const heard = vi.fn();
         const stop = subscribeNativeQueueAudio(heard);
         await keepAudioAhead(queue, 2, local('s2'), 'high');
@@ -74,7 +74,7 @@ describe('downloading the songs ahead', () => {
 
     it('goes on past a song that cannot be fetched, and stops when a newer call takes over', async () => {
         h.warmup.mockImplementationOnce(async () => { throw new Error('unavailable'); })
-            .mockImplementation(async (item: SongResult) => ({ audioUrl: local(item.id) }));
+            .mockImplementation(async (item: SongResult) => ({ audioUrl: local(String(item.id)) }));
         await keepAudioAhead(queue, 0, local('s0'), 'high');
         expect(h.warmup).toHaveBeenCalledTimes(NATIVE_AUDIO_AHEAD);
 
