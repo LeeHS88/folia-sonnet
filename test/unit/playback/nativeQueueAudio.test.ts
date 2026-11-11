@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SongResult } from '@/types';
+import type { QueueMirrorEntry } from '@/utils/queueMirrorEntry';
 
 // test/unit/playback/nativeQueueAudio.test.ts
 // The native queue mirror carries the files of the downloaded songs around the playing one, and the
@@ -23,7 +24,7 @@ const { keepAudioAhead, subscribeNativeQueueAudio, withDownloadedAudio, NATIVE_A
 
 const local = (id: string) => `https://localhost/_capacitor_file_/data/cache/ytm-audio/${id}-251.webm`;
 const song = (id: string) => ({ id, name: id }) as unknown as SongResult;
-const entry = (id: string) => ({ songKey: id, title: id, artist: '' }) as never;
+const entry = (id: string) => ({ songKey: id, title: id, artist: '' }) as unknown as QueueMirrorEntry & { url?: string };
 const queue = Array.from({ length: 14 }, (_, index) => song(`s${index}`));
 
 beforeEach(() => {
@@ -33,9 +34,9 @@ beforeEach(() => {
 
 describe('mirror entries with downloaded files', () => {
     it('adds the file of downloaded songs from one behind to eight ahead of the playing one', () => {
-        for (const item of queue) h.urls.set(item.id, local(String(item.id)));
+        for (const item of queue) h.urls.set(String(item.id), local(String(item.id)));
         h.urls.set('s5', 'https://rr3---sn.googlevideo.com/videoplayback');
-        const entries = withDownloadedAudio(queue, queue.map(item => entry(item.id)), 2);
+        const entries = withDownloadedAudio(queue, queue.map(item => entry(String(item.id))), 2);
         const urls = entries.map((item: { url?: string }) => item.url ?? null);
         expect(urls[0]).toBeNull();
         expect(urls[1]).toBe('file:///data/cache/ytm-audio/s1-251.webm');
