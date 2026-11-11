@@ -11,6 +11,8 @@ import { buildQueueMirrorEntries, getMirrorDurationMs, resolveLikeIdentity } fro
 import type { NativeQueueState } from '../services/nativeQueueBridge';
 import { isNativePlaybackReconciling } from '../services/playbackEngine/nativePlaybackSync';
 import { useNativePlaybackReconciliation } from './useNativePlaybackReconciliation';
+import { keepAudioAhead, subscribeNativeQueueAudio, withDownloadedAudio } from '../services/nativeQueueAudio';
+import { useAudioSettingsStore } from '../stores/useAudioSettingsStore';
 
 // 当前文件：把播放状态与元数据送到原生前台服务，换取通知栏媒体控制与后台网络保活。
 //
@@ -403,6 +405,9 @@ export const useCapacitorPlaybackBridge = ({
     }).join(','),
     [queue, likeStateOf],
   );
+  // 前面几首下载好了：镜像要带上它们的文件重推一次（见 nativeQueueAudio）。
+  const [downloadedAudioSignal, setDownloadedAudioSignal] = React.useState(0);
+  React.useEffect(() => (enabled ? subscribeNativeQueueAudio(() => setDownloadedAudioSignal(n => n + 1)) : undefined), [enabled]);
   const mirrorSourceRef = React.useRef({ queue, likeStateOf, currentSong });
   mirrorSourceRef.current = { queue, likeStateOf, currentSong };
   React.useEffect(() => {
@@ -413,12 +418,20 @@ export const useCapacitorPlaybackBridge = ({
     // 这里每推一次队列顺手同步一遍 —— 一次几十字节的调用，换原生兜底不空手。
     // 走 omni 而不是直连 transport：hooks 按依赖方向只该经过 omni。
     omni.syncNativeGatewayCredentials();
-    const entries = buildQueueMirrorEntries(list, stateOf);
     const index = activeSong ? list.findIndex((song) => getPlaybackSongKey(song) === getPlaybackSongKey(activeSong)) : -1;
+    // 已下载到缓存的歌带上文件：锁屏后 WebView 被冻住，原生靠它们自己接着放。
+    const entries = withDownloadedAudio(list, buildQueueMirrorEntries(list, stateOf), index);
     void FoliaPlayback.setQueueMirror({ queueJson: JSON.stringify(entries), index });
     // likeSignal 不进依赖数组的「语义」，只当「红心状态变了」的触发器用。
     // eslint 层面它确实被 effect 体间接读到，所以照实列上。
-  }, [enabled, queue, likeSignal, reconciling]);
+  }, [enabled, queue, likeSignal, reconciling, downloadedAudioSignal]);
+
+  // 正播的是下载到缓存的歌：趁应用在前台，把后面几首也下载好（只取音频）。
+  React.useEffect(() => {
+    if (!enabled || !currentSong || !queue || queue.length === 0) return;
+    const index = queue.findIndex((song) => getPlaybackSongKey(song) === getPlaybackSongKey(currentSong));
+    void keepAudioAhead(queue, index, currentAudioUrl, useAudioSettingsStore.getState().audioQuality);
+  }, [enabled, currentSong, queue, currentAudioUrl]);
 
   // 游标：队列没变、换了一首正播的。几百 KB 的全量 JSON 不跟着切歌过桥。
   React.useEffect(() => {

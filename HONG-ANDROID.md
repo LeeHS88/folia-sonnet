@@ -44,6 +44,12 @@ Android port of Folia, 0.7.27.x) with the customizations made on the desktop Fol
   was only handled when the app was opened again). `MainActivity.kt` now keeps the renderer at
   IMPORTANT priority while hidden (`setRendererPriorityPolicy(RENDERER_PRIORITY_IMPORTANT, false)`).
 
+- **Still stuck with the screen off on some phones:** the renderer priority alone was not enough on
+  Hong's phone (the WebView was still frozen). `nativeQueueAudio.ts` now keeps the next 5 songs
+  downloaded while the app is in front and the native queue mirror carries their files, so the
+  native player plays on through them by itself (about 20 minutes with the screen off). Past them
+  it hands the next song to the WebView, which plays it once the app is opened.
+
 ## Building
 
 `.github/workflows/hong-apk.yml` builds a debug-signed APK on every push to `hong-custom` (or by hand

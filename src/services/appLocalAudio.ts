@@ -1,5 +1,5 @@
 // src/services/appLocalAudio.ts
-// Songs some platforms download into the app's cache before playing (YouTube Music on Android) are
+// Songs some platforms download into the app's cache before playing (on Android) are
 // addressed through the WebView as `https://localhost/_capacitor_file_/…`. The cache keeps only a
 // few of them, so such an address can outlive its file while the prefetch cache still holds it
 // (a replayed song then fails with ERROR_CODE_IO_FILE_NOT_FOUND). Before such an address is reused

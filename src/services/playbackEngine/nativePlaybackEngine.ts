@@ -43,7 +43,7 @@ export const NATIVE_PLAYBACK_ENABLED: boolean = true;
 
 
 /**
- * A file the app downloaded (YouTube Music audio on Android) reaches the WebView as
+ * A file the app downloaded (a platform whose audio is downloaded before it plays) reaches the WebView as
  * `https://localhost/_capacitor_file_/…` (Capacitor.convertFileSrc). That address exists only inside
  * the WebView: ExoPlayer cannot open it and fails with ERROR_CODE_IO_NETWORK_CONNECTION_FAILED.
  * The native player is handed the file (or content) URI the address stands for instead.
