@@ -64,7 +64,8 @@ describe('downloading the songs ahead', () => {
         stop();
         const fetched = h.warmup.mock.calls.map(([item]) => (item as { id: string }).id);
         expect(fetched).toEqual(['s3', 's5', 's6', 's7'].slice(0, NATIVE_AUDIO_AHEAD - 1));
-        expect(heard).toHaveBeenCalledTimes(fetched.length);
+        // Once for s4, already downloaded by the ordinary prefetch, then once per new file.
+        expect(heard).toHaveBeenCalledTimes(fetched.length + 1);
     });
 
     it('does nothing while the playing song is not a downloaded file', async () => {

@@ -13,6 +13,7 @@ import { isNativePlaybackReconciling } from '../services/playbackEngine/nativePl
 import { useNativePlaybackReconciliation } from './useNativePlaybackReconciliation';
 import { keepAudioAhead, subscribeNativeQueueAudio, withDownloadedAudio } from '../services/nativeQueueAudio';
 import { useAudioSettingsStore } from '../stores/useAudioSettingsStore';
+import { usePlaybackStore } from '../stores/usePlaybackStore';
 
 // 当前文件：把播放状态与元数据送到原生前台服务，换取通知栏媒体控制与后台网络保活。
 //
@@ -427,11 +428,13 @@ export const useCapacitorPlaybackBridge = ({
   }, [enabled, queue, likeSignal, reconciling, downloadedAudioSignal]);
 
   // 正播的是下载到缓存的歌：趁应用在前台，把后面几首也下载好（只取音频）。
+  // 正播的地址直接读播放 store：调用方并不传 currentAudioUrl（它是可选的），只靠它就永远不触发。
+  const playingAudioUrl = usePlaybackStore((state) => state.audioSrc) ?? currentAudioUrl;
   React.useEffect(() => {
     if (!enabled || !currentSong || !queue || queue.length === 0) return;
     const index = queue.findIndex((song) => getPlaybackSongKey(song) === getPlaybackSongKey(currentSong));
-    void keepAudioAhead(queue, index, currentAudioUrl, useAudioSettingsStore.getState().audioQuality);
-  }, [enabled, currentSong, queue, currentAudioUrl]);
+    void keepAudioAhead(queue, index, playingAudioUrl, useAudioSettingsStore.getState().audioQuality);
+  }, [enabled, currentSong, queue, playingAudioUrl]);
 
   // 游标：队列没变、换了一首正播的。几百 KB 的全量 JSON 不跟着切歌过桥。
   React.useEffect(() => {

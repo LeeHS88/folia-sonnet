@@ -73,6 +73,9 @@ export const keepAudioAhead = async (
     const run = ++keepAheadRun;
     if (playingIndex < 0 || !isAppLocalAudioUrl(playingAudioUrl)) return;
     const ahead = list.slice(playingIndex + 1, playingIndex + 1 + NATIVE_AUDIO_AHEAD);
+    // Files the ordinary prefetch already downloaded count too: the mirror may have been pushed
+    // before they existed, so it is pushed again once here.
+    if (ahead.some(song => downloadedFileOf(song))) listeners.forEach(listener => listener());
     for (const song of ahead) {
         if (run !== keepAheadRun) return;
         if (downloadedFileOf(song)) continue;
